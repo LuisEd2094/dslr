@@ -67,8 +67,8 @@ def kurtosis(mean, std, len, data):
 # Using same formula as Pandas for skewness
 # Skewness measures whether data is balanced around the mean or shifted to one side.
 # If skewness = 0 → Data is perfectly symmetric (normal distribution).
-# If skewness > 0 → Data is right-skewed (positive skew) (longer tail on the right, we have some big values to the right).
-# If skewness < 0 → Data is left-skewed (negative skew) (longer tail on the left, we have some small values to the left).
+# If skewness > 0 → Data is right-skewed (positive skew) (longer tail on the right).
+# If skewness < 0 → Data is left-skewed (negative skew) (longer tail on the left).
 def skewness(mean, std, len, data):
     return (len / ((len - 1) * (len - 2))) * sum(((x - mean) / std) ** 3 for x in data)
 
