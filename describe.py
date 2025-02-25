@@ -15,6 +15,24 @@ def read_csv(file):
     return data
 
 
+def clean_data(csv, descriptions):
+    features = {header: {desc: [] for desc in descriptions} for header in csv[0]}
+    for row in csv[1:]:
+        for i, value in enumerate(row):
+            column = csv[0][i]
+            try:
+                value = float(value)
+                features[column]["summary"].append(value)
+            except ValueError:
+                pass
+    to_remove = []
+    for column in features:
+        feature = features[column]["summary"]
+        if len(feature) == 0 or all(math.isnan(x) for x in feature):
+            to_remove.append(column)
+    return {k: v for k, v in features.items() if k not in to_remove}
+
+
 def get_args():
     if len(sys.argv) != 2:
         raise Exception("Usage: python describe.py <filename>")
@@ -73,19 +91,9 @@ def get_features(filename="dataset_train.csv"):
     ]
     csv = get_csv(filename)
     csv = read_csv(csv)
-    features = {header: {desc: [] for desc in descriptions} for header in csv[0]}
-    for row in csv[1:]:
-        for i, value in enumerate(row):
-            column = csv[0][i]
-            try:
-                value = float(value)
-                features[column]["summary"].append(value)
-            except ValueError:
-                pass
+    features = clean_data(csv, descriptions)
     for column in features:
         summary = features[column]["summary"]
-        if len(summary) == 0 or all(math.isnan(x) for x in summary):
-            continue
         features[column]["count"] = len(summary)
         features[column]["mean"] = sum(summary) / features[column]["count"]
 
@@ -94,10 +102,9 @@ def get_features(filename="dataset_train.csv"):
         # Standard deviation is the square root of the variance.
         # STD is more commonly used because it is in the same units as the data.
         # Variance is in squared units, which is not as intuitive, but some formulas require it, since its easier to work with.
-        features[column]["var"] = (
-            sum([(x - features[column]["mean"]) ** 2 for x in summary])
-            / (features[column]["count"] - 1)
-        )
+        features[column]["var"] = sum(
+            [(x - features[column]["mean"]) ** 2 for x in summary]
+        ) / (features[column]["count"] - 1)
 
         features[column]["std"] = features[column]["var"] ** 0.5
         sorted_summary = sorted(summary)
@@ -107,7 +114,6 @@ def get_features(filename="dataset_train.csv"):
         features[column]["25%"] = percentile(sorted_summary, 25)
         features[column]["50%"] = percentile(sorted_summary, 50)
         features[column]["75%"] = percentile(sorted_summary, 75)
-
 
         features[column]["skew"] = skewness(
             features[column]["mean"],
