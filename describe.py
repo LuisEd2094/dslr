@@ -1,5 +1,6 @@
 import sys
 import math
+import json
 
 
 def get_csv(filename="dataset_train.csv"):
@@ -136,10 +137,13 @@ if __name__ == "__main__":
     try:
         args = get_args()
         df = get_features(args)
+        output_file = "output.json"
+
+        # Save the dictionary as a JSON file
+        with open(output_file, "w") as f:
+            json.dump(df, f, indent=4)  # `indent=4` makes the JSON human-readable
         for column in df:
             summary = df[column]["summary"]
-            if len(summary) == 0 or all(math.isnan(x) for x in summary):
-                continue
             print(f"{column}:")
             for desc in df[column]:
                 if desc != "summary":
