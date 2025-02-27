@@ -17,7 +17,7 @@ def main():
 
     # Generate pair plot
     plt.figure(figsize=(12, 8))
-    sns.set(style="ticks")
+    sns.set_theme(style="ticks")
     plot = sns.pairplot(
         df_plot,
         hue='Hogwarts House',
@@ -25,7 +25,7 @@ def main():
         plot_kws={'alpha': 0.6},
         diag_kind='hist'
     )
-    plot.fig.suptitle("Pair Plot of Numerical Features by Hogwarts House", y=1.02)
+    plot.figure.suptitle("Pair Plot of Numerical Features by Hogwarts House", y=1.02)
     
     # plt.show()
     plt.savefig("pair_plot.png", bbox_inches='tight')
