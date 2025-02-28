@@ -1,5 +1,6 @@
 import sys
 import math
+import json
 
 
 def get_csv(filename="dataset_train.csv"):
@@ -67,8 +68,8 @@ def kurtosis(mean, std, len, data):
 # Using same formula as Pandas for skewness
 # Skewness measures whether data is balanced around the mean or shifted to one side.
 # If skewness = 0 → Data is perfectly symmetric (normal distribution).
-# If skewness > 0 → Data is right-skewed (positive skew) (longer tail on the right, we have some big values to the right).
-# If skewness < 0 → Data is left-skewed (negative skew) (longer tail on the left, we have some small values to the left).
+# If skewness > 0 → Data is right-skewed (positive skew) (longer tail on the right).
+# If skewness < 0 → Data is left-skewed (negative skew) (longer tail on the left).
 def skewness(mean, std, len, data):
     return (len / ((len - 1) * (len - 2))) * sum(((x - mean) / std) ** 3 for x in data)
 
@@ -136,10 +137,13 @@ if __name__ == "__main__":
     try:
         args = get_args()
         df = get_features(args)
+        output_file = "output.json"
+
+        # Save the dictionary as a JSON file
+        with open(output_file, "w") as f:
+            json.dump(df, f, indent=4)  # `indent=4` makes the JSON human-readable
         for column in df:
             summary = df[column]["summary"]
-            if len(summary) == 0 or all(math.isnan(x) for x in summary):
-                continue
             print(f"{column}:")
             for desc in df[column]:
                 if desc != "summary":
