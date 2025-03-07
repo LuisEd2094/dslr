@@ -7,14 +7,44 @@ from sklearn.preprocessing import LabelEncoder
 def sigmoid(z):
     return 1 / (1 + np.exp(-z))
 
-def train_logistic_regression(X, y, alpha=0.01, epochs=1000):
+def train_logistic_regression(X, y, alpha=0.01, epochs=100, mode='gd', batch_size=32):
     m, n = X.shape
     weights = np.zeros(n)
-    for _ in range(epochs):
-        z = X.dot(weights)
-        h = sigmoid(z)
-        gradient = (1/m) * X.T.dot(h - y)
-        weights -= alpha * gradient
+    
+    if mode == 'gd':
+        # Standard Gradient Descent
+        for i in range(epochs):
+            z = X.dot(weights)
+            h = sigmoid(z)
+            gradient = (1/m) * X.T.dot(h - y)
+            weights -= alpha * gradient
+            
+    elif mode == 'sgd':
+        # Stochastic Gradient Descent
+        for _ in range(epochs):
+            for i in range(m):
+                xi = X[i]
+                yi = y[i]
+                z = np.dot(xi, weights)
+                h = sigmoid(z)
+                gradient = (h - yi) * xi
+                weights -= alpha * gradient
+                
+    elif mode == 'mb':
+        # Mini-Batch Gradient Descent
+        indices = np.arange(m)
+        np.random.shuffle(indices)
+        for _ in range(epochs):
+            for start in range(0, m, batch_size):
+                end = start + batch_size
+                batch_idx = indices[start:end]
+                X_batch = X[batch_idx]
+                y_batch = y[batch_idx]
+                z = X_batch.dot(weights)
+                h = sigmoid(z)
+                gradient = (1/batch_size) * X_batch.T.dot(h - y_batch)
+                weights -= alpha * gradient
+                
     return weights
 
 def main():
@@ -42,13 +72,17 @@ def main():
     
     # Split into train/validation sets
     X_train, X_val, y_train, y_val = train_test_split(X.values, y, test_size=0.2, random_state=42)
-    
+
     # Train One-vs-All classifiers
     houses = le.classes_
     weights_dict = {}
     for idx, house in enumerate(houses):
         y_binary = np.where(y_train == idx, 1, 0)
-        weights = train_logistic_regression(X_train, y_binary)
+        weights = train_logistic_regression(
+            X_train, y_binary, 
+            alpha=0.01, epochs=100, 
+            mode='gd'  # Toggle between 'gd', 'sgd', 'mb'
+        )
         weights_dict[house] = weights
     
     # Validate on the validation set
