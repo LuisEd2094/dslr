@@ -22,7 +22,7 @@ def main():
     test_df = test_df.drop(['Index', 'First Name', 'Last Name', 'Birthday', 'Best Hand'], axis=1)
     
     # Align columns with training data
-    required_columns = feature_means.index.tolist()  # No "Best Hand" anymore
+    required_columns = feature_means.index.tolist()
     test_df = test_df[required_columns]
     
     # Fill missing values and standardize

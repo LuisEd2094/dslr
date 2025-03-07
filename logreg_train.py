@@ -21,7 +21,7 @@ def main():
     # Load data
     df = pd.read_csv('dataset_train.csv')
     
-    # Drop irrelevant columns (including "Best Hand")
+    # Drop irrelevant columns
     df = df.drop(['Index', 'First Name', 'Last Name', 'Birthday', 'Best Hand'], axis=1)
     
     # Encode target variable ("Hogwarts House")
