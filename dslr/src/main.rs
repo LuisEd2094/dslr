@@ -1,15 +1,13 @@
 use ndarray::s;
 use ndarray::{Array1, Array2, Axis};
 use serde::{Deserialize, Serialize};
-use serde_json::{self, to_string};
+use serde_json::{self};
 use std::collections::HashMap;
 use std::error::Error;
-use std::f64::consts::E;
 use std::fs::File;
 use std::io;
 use std::io::BufRead;
 use std::io::Read;
-use std::io::Write;
 use std::path::Path;
 use std::vec::Vec;
 
