@@ -1,6 +1,7 @@
+use ndarray::s;
 use ndarray::{Array1, Array2, Axis};
 use serde::{Deserialize, Serialize};
-use serde_json;
+use serde_json::{self, to_string};
 use std::collections::HashMap;
 use std::error::Error;
 use std::f64::consts::E;
@@ -8,6 +9,7 @@ use std::fs::File;
 use std::io;
 use std::io::BufRead;
 use std::io::Read;
+use std::io::Write;
 use std::path::Path;
 use std::vec::Vec;
 
@@ -16,17 +18,12 @@ fn sigmoid(z: &Array1<f64>) -> Array1<f64> {
     z.mapv(|x| 1.0 / (1.0 + (-x).exp()))
 }
 
-fn train_model(
-    x: &Array2<f64>,
-    y: &Array1<f64>,
-    weights: &mut Array1<f64>,
-    alpha: f64,
-    epochs: usize,
-) {
+fn train_model(x: &Array2<f64>, y: &Array1<f64>, alpha: f64, epochs: usize) -> Array1<f64> {
+    let mut weights = Array1::<f64>::zeros(x.ncols());
     let m = y.len() as f64;
 
     for _ in 0..epochs {
-        let z = x.dot(weights);
+        let z = x.dot(&weights);
         let h = sigmoid(&z);
         let gradient = x.t().dot(&(h - y)) / m;
 
@@ -34,6 +31,7 @@ fn train_model(
             *weight -= gradient[i] * alpha;
         }
     }
+    weights
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -82,6 +80,20 @@ impl House {
             House::Ravenclaw => 2,
             House::Slytherin => 3,
         }
+    }
+}
+
+use std::fmt;
+
+impl fmt::Display for House {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let house_name = match *self {
+            House::Gryffindor => "Gryffindor",
+            House::Hufflepuff => "Hufflepuff",
+            House::Ravenclaw => "Ravenclaw",
+            House::Slytherin => "Slytherin",
+        };
+        write!(f, "{}", house_name)
     }
 }
 
@@ -186,29 +198,106 @@ fn get_columns_to_keep(csv_file_path: &str) -> Vec<usize> {
     columns_to_keep
 }
 
-fn run(file_path: &str) -> Result<(), Box<dyn std::error::Error>> {
-    // Open and read the JSON file
-    let parsed_data: Result<HashMap<String, ColumnStats>, Box<dyn Error>> =
-        get_describe_from_json("output.json");
-    let x = read_csv(
-        file_path,
-        &get_columns_to_keep(file_path),
-        &parsed_data.unwrap(),
-    ).unwrap(); // Adjust path as needed
-    // Initialize weights to small random values
-    let mut weights = Array1::<f64>::zeros(x.ncols());
-    // Hyperparameters
+fn run(file_path: &str) -> Result<HashMap<House, Array1<f64>>, Box<dyn Error>> {
+    // Load your dataset here
+    let parsed_data: HashMap<String, ColumnStats> = get_describe_from_json("output.json")?;
+
+    // Read the data from CSV
+    let x = read_csv(file_path, &get_columns_to_keep(file_path), &parsed_data)?;
+    let y = x.index_axis(Axis(1), 0).to_owned(); // Assumes the first column is the target (house)
+    let x = x.slice(s![.., 1..]).to_owned(); // Features are everything except the first column
+
+    // Hyperparameters for training
     let alpha = 0.1; // Learning rate
-    let epochs = 1000;
-    let y = x.index_axis(Axis(1), 0).to_owned();
+    let epochs = 100;
 
-    let weights = train_model(&x[1:], &y, &mut weights, alpha, epochs);
-    Ok(weights)
+    // Define the houses (as enum values)
+    let houses = vec![
+        House::Gryffindor,
+        House::Hufflepuff,
+        House::Ravenclaw,
+        House::Slytherin,
+    ];
+
+    // Initialize a HashMap to store weights for each house
+    let mut weights_dict: HashMap<House, Array1<f64>> = HashMap::new();
+
+    // Train a separate logistic regression model for each house (1-vs-All)
+    for (idx, house) in houses.iter().enumerate() {
+        let y_binary: Array1<f64> = y.mapv(|y| if y == idx as f64 { 1.0 } else { 0.0 });
+
+        // Train the model for the current house
+        let weights = train_model(&x, &y_binary, alpha, epochs);
+
+        // Store the weights for the current house
+        weights_dict.insert(house.clone(), weights);
+    }
+    Ok(weights_dict)
 }
+#[derive(Serialize, Deserialize)]
+struct Weights {
+    weights: Vec<f64>,
+}
+// Prediction function using the trained models
+fn predict(x: &Array2<f64>, weights_dict: &HashMap<House, Array1<f64>>) -> Vec<House> {
+    let mut predictions = Vec::new();
+    let x = x.slice(s![.., 1..]).to_owned();
+    for i in 0..x.nrows() {
+        let row = x.slice(s![i, ..]).to_owned();
 
+        // Compute the probabilities for each house
+        let mut probs: Vec<(House, f64)> = weights_dict
+            .iter()
+            .map(|(house, weights)| {
+                let z = row.dot(weights); // dot product between row and weights (weights should be 1D)
+                let prob = sigmoid(&Array1::from(vec![z]))[0]; // Apply sigmoid to compute probability
+                (*house, prob)
+            })
+            .collect();
+
+        // Sort houses by probability and pick the house with the highest probability
+        probs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap()); // Sort in descending order by probability
+        predictions.push(probs[0].0); // The house with the highest probability
+    }
+
+    predictions
+}
+fn calculate_accuracy(predictions: &Vec<House>, actual: &Array1<f64>) -> f64 {
+    let mut correct_predictions = 0;
+
+    // Loop through predictions and actual values
+    for (pred, actual_label) in predictions.iter().zip(actual.iter()) {
+        // Convert actual_label to a House using from_index
+        if let Some(actual_house) = House::from_index(*actual_label as i32) {
+            // Compare predicted house with the actual house
+            let pred_str = pred.to_string();
+            if pred_str == actual_house {
+                correct_predictions += 1;
+            }
+        }
+    }
+
+    // Return the accuracy
+    correct_predictions as f64 / predictions.len() as f64
+}
 fn main() {
-    match run("/home/luis/proyects/dslr/dataset_train.csv") {
-        Ok(_) => println!("Processing completed successfully."),
+    let file_path = "/home/luis/proyects/dslr/dataset_train.csv";
+    match run(file_path) {
+        Ok(weights_dict) => {
+            // Load the parsed data from the JSON file
+            let parsed_data: HashMap<String, ColumnStats> =
+                get_describe_from_json("output.json").unwrap();
+            let x = read_csv(file_path, &get_columns_to_keep(file_path), &parsed_data).unwrap();
+            let y = x.index_axis(Axis(1), 0).to_owned(); // Assuming the first column is the true label (house)
+
+            // Get predictions using the trained models and the same training data (x)
+            let predictions = predict(&x, &weights_dict);
+
+            // Calculate accuracy
+            println!("Accuracy: {:.2}%", calculate_accuracy(&predictions, &y) * 100.0);
+
+            // Output the predictions and accuracy
+        }
         Err(e) => eprintln!("Error: {}", e),
     }
 }
