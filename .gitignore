@@ -1,3 +1,5 @@
 *.png
 target
 *.lock
+weights.npz
+houses.csv
