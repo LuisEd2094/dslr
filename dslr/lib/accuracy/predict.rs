@@ -1,13 +1,13 @@
 use crate::accuracy::accuracy::calculate_accuracy;
 use crate::log_reg::sigmoid::sigmoid;
-use crate::structs::{House, ColumnStats};
-use crate::aux::{get_describe_from_json, read_csv, get_columns_to_keep};
-use ndarray::{s, Array1, Array2, Axis};
+use crate::structs::House;
+use ndarray::{s, Array1, Array2};
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::{BufWriter, Write};
 
 fn predict(x: &Array2<f64>, weights_dict: &HashMap<House, Array1<f64>>) -> Vec<House> {
     let mut predictions = Vec::new();
-    let x = x.slice(s![.., 1..]).to_owned();
     for i in 0..x.nrows() {
         let row = x.slice(s![i, ..]).to_owned();
 
@@ -29,20 +29,25 @@ fn predict(x: &Array2<f64>, weights_dict: &HashMap<House, Array1<f64>>) -> Vec<H
     predictions
 }
 
-pub fn check_accuracy(weights_dict: HashMap<House, Array1<f64>>, file_path: &str) {
-    // Load the parsed data from the JSON file
-    let parsed_data: HashMap<String, ColumnStats> = get_describe_from_json("output.json").unwrap();
-    let x = read_csv(file_path, &get_columns_to_keep(file_path), &parsed_data).unwrap();
-    let y = x.index_axis(Axis(1), 0).to_owned(); // Assuming the first column is the true label (house)
+pub fn make_predictions(weights_dict: &HashMap<House, Array1<f64>>, x: &Array2<f64>) {
+    let predictions = predict(&x, &weights_dict);
+    let file = File::create("predictions.csv").unwrap();
+    let mut writer = BufWriter::new(file);
+    writeln!(writer, "Index,Hogwarts House").unwrap();
 
-    // Get predictions using the trained models and the same training data (x)
+    for (i, pred) in predictions.iter().enumerate() {
+        writeln!(writer, "{},{}", i, pred.to_string()).unwrap();
+    }
+}
+
+pub fn check_accuracy(weights_dict: &HashMap<House, Array1<f64>>, x: &Array2<f64>) {
+    let y: Array1<f64> = x.column(0).to_owned();
+    // Shadows first x_train, but I need to slice it again to remove the first column
+    let x: Array2<f64> = x.slice(s![.., 1..]).to_owned();
     let predictions = predict(&x, &weights_dict);
 
-    // Calculate accuracy
     println!(
         "Accuracy: {:.2}%",
         calculate_accuracy(&predictions, &y) * 100.0
     );
-
-    // Output the predictions and accuracy
 }
