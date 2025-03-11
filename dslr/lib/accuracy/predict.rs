@@ -29,9 +29,9 @@ fn predict(x: &Array2<f64>, weights_dict: &HashMap<House, Array1<f64>>) -> Vec<H
     predictions
 }
 
-pub fn make_predictions(weights_dict: &HashMap<House, Array1<f64>>, x: &Array2<f64>) {
+pub fn make_predictions(weights_dict: &HashMap<House, Array1<f64>>, x: &Array2<f64>, output_file: &str) {
     let predictions = predict(&x, &weights_dict);
-    let file = File::create("predictions.csv").unwrap();
+    let file = File::create(output_file).unwrap();
     let mut writer = BufWriter::new(file);
     writeln!(writer, "Index,Hogwarts House").unwrap();
 
