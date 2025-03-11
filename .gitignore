@@ -3,3 +3,5 @@ target
 *.lock
 weights.npz
 houses.csv
+*.json
+predictions.csv

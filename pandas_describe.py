@@ -20,3 +20,8 @@ desc.loc['range'] = numeric_data.max() - numeric_data.min()  # Range
 #print(desc)
 
 print(data.describe())
+
+import matplotlib.pyplot as plt
+
+data.hist(figsize=(20,20))
+plt.savefig('pandas_histogram.png')

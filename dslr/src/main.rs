@@ -1,97 +1,136 @@
-use std::fs::File;
-use std::io::{self, BufRead};
-use std::path::Path;
-use std::vec::Vec;
+use dslr::accuracy::{check_accuracy, make_predictions};
+use dslr::aux::{get_columns_to_keep, get_describe_from_json, read_csv};
+use dslr::log_reg::{train, train_model_gradient, train_model_mbgd, train_model_sgd};
+use dslr::structs::{ColumnStats, House};
 
-// Sigmoid function
-fn sigmoid(x: f64) -> f64 {
-    1.0 / (1.0 + (-x).exp())
+use clap::Parser;
+use ndarray::{Array1, Array2};
+use std::collections::HashMap;
+use std::error::Error;
+
+/// Command-line argument parser
+#[derive(Parser, Debug)]
+#[command(name = "ML Trainer", about = "Train a model using SGD | GD | MBGD")]
+struct Args {
+    /// Choose optimization function (sgd | gd | mbgd)
+    #[arg(long, default_value = "gd")]
+    func: Option<String>,
+
+    /// Training data file
+    #[arg(long, default_value = "/home/luis/proyects/dslr/dataset_train.csv")]
+    train: Option<String>,
+
+    /// Testing data file
+    #[arg(long, default_value = "/home/luis/proyects/dslr/dataset_test.csv")]
+    test: Option<String>,
+
+    /// JSON file with parsed data
+    #[arg(long, default_value = "output.json")]
+    json: Option<String>,
+
+    /// Learning rate
+    #[arg(long, default_value = "0.0000000000000001", allow_hyphen_values = true)]
+    lr: Option<f64>,
+
+    /// Number of epochs
+    #[arg(long, default_value = "100", allow_hyphen_values = true)]
+    epochs: Option<usize>,
+
+    /// Output file
+    #[arg(long, default_value = "predictions.csv")]
+    output: Option<String>,
 }
 
-// Function to read CSV and extract needed columns
-fn read_csv(file_path: &str, column_name: &str) -> io::Result<Vec<(f64, i32)>> {
-    let path: &Path = Path::new(file_path);
-    let file: File = File::open(&path)?;
-    let reader: io::BufReader<File> = io::BufReader::new(file);
-    let mut column_index: Option<usize> = None;
-
-    let mut data: Vec<(f64, i32)> = Vec::new();
-    for (e, l) in reader.lines().enumerate() {
-        // We can't set types in for loops, so we need to specify them here
-        // We also unwrap the result of the parse method, if we know it will always succeed
-        let (i, line): (usize, String) = (e, l?);
-        let columns: Vec<&str> = line.split(',').collect();
-        if i == 0 {
-            // Find the index of the requested column
-            column_index = columns.iter().position(|&col| col == column_name);
-            if column_index.is_none() {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "Column not found",
-                ));
-            }
-            continue; // Skip header row
-        }
-        if let Some(idx) = column_index {
-            let feature_value: f64 = columns[idx].parse().unwrap_or(0.0);
-            let house = match columns[1] {
-                "Gryffindor" => 0,
-                "Hufflepuff" => 1,
-                "Ravenclaw" => 2,
-                "Slytherin" => 3,
-                _ => continue,
-            };
-            data.push((feature_value, house));
-        }
-    }
-    Ok(data)
-}
-
-// Compute the cost function
-fn cost_function(weights: f64, data: &Vec<(f64, i32)>) -> f64 {
-    let mut cost: f64 = 0.0;
-    for (e, e1) in data {
-        let (x, y): (&f64, &i32) = (e, e1);
-        let y_hat: f64 = sigmoid(weights * x);
-        let y_f: f64 = *y as f64;
-        cost += -y_f * y_hat.ln() - (1.0 - y_f) * (1.0 - y_hat).ln();
-    }
-    cost / data.len() as f64
-}
-
-// Perform gradient descent
-fn gradient_descent(
-    mut weights: f64,
-    data: &Vec<(f64, i32)>,
+fn run(
+    file_path: &str,
+    parsed_data: &HashMap<String, ColumnStats>,
     learning_rate: f64,
-    iterations: usize,
-) -> (f64, f64) {
-    let mut cost = cost_function(weights, data);
-    for _ in 0..iterations {
-        let mut gradient = 0.0;
-        for (x, y) in data {
-            let y_hat = sigmoid(weights * x);
-            let y_f = *y as f64;
-            gradient += (y_hat - y_f) * x;
-        }
-        gradient /= data.len() as f64;
-        weights -= learning_rate * gradient;
-        cost = cost_function(weights, data);
+    epochs: usize,
+    train_func: fn(&Array2<f64>, &Array1<f64>, f64, usize) -> Array1<f64>,
+) -> Result<HashMap<House, Array1<f64>>, Box<dyn Error>> {
+    // Load your dataset here
+    let x = read_csv(file_path, &get_columns_to_keep(file_path), &parsed_data)?;
+    Ok(train(&x, learning_rate, epochs, train_func)?)
+}
+
+pub fn parse_and_validate_args() -> (
+    String,
+    String,
+    String,
+    String,
+    f64,
+    usize,
+    fn(&Array2<f64>, &Array1<f64>, f64, usize) -> Array1<f64>,
+) {
+    let args = Args::parse();
+
+    let training_file: String = args.train.unwrap();
+    let testing_file: String = args.test.unwrap();
+    let output_file: String = args.output.unwrap();
+    let json: String = args.json.unwrap();
+    let learning_rate: f64 = args.lr.unwrap();
+    let epochs: usize = args.epochs.unwrap();
+    let func: String = args.func.unwrap();
+
+    if learning_rate <= 0.0 {
+        panic!("Learning rate (--lr) must be greater than zero!");
     }
-    (weights, cost)
+
+    if epochs == 0 {
+        panic!("Epochs (--epochs) must be greater than zero!");
+    }
+
+    let train_func: fn(&Array2<f64>, &Array1<f64>, f64, usize) -> Array1<f64> = match func.as_str()
+    {
+        "sgd" => train_model_sgd,
+        "gd" => train_model_gradient,
+        "mbgd" => train_model_mbgd,
+        _ => panic!("Invalid optimization function"),
+    };
+
+    (
+        training_file,
+        testing_file,
+        output_file,
+        json,
+        learning_rate,
+        epochs,
+        train_func,
+    )
 }
 
 fn main() {
-    let file_path = "../dataset_train.csv"; // Adjust path as needed
-    match read_csv(file_path, "Potions") {
-        Ok(data) => {
-            let learning_rate: f64 = 0.01;
-            let iterations: usize = 1000;
-            let initial_weight: f64 = 0.0;
-            let trained_weight: (f64, f64) =
-                gradient_descent(initial_weight, &data, learning_rate, iterations);
-            println!("Trained weight: {:?}", trained_weight);
-        }
-        Err(e) => eprintln!("Error reading file: {}", e),
+    let (training_file, testing_file, output_file, json, learning_rate, epochs, train_func) =
+        parse_and_validate_args();
+
+    match get_describe_from_json(&json) {
+        Ok(parsed_data) => match run(
+            &training_file,
+            &parsed_data,
+            learning_rate,
+            epochs,
+            train_func,
+        ) {
+            Ok(weights_dict) => {
+                let x_train: Array2<f64> = read_csv(
+                    &training_file,
+                    &get_columns_to_keep(&training_file),
+                    &parsed_data,
+                )
+                .unwrap();
+
+                let x_test: Array2<f64> = read_csv(
+                    &testing_file,
+                    &get_columns_to_keep(&testing_file),
+                    &parsed_data,
+                )
+                .unwrap();
+
+                check_accuracy(&weights_dict, &x_train);
+                make_predictions(&weights_dict, &x_test, &output_file);
+            }
+            Err(e) => eprintln!("Error: {}", e),
+        },
+        Err(e) => eprintln!("Error: {}", e),
     }
 }
